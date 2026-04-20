@@ -1,0 +1,88 @@
+//------------------------------------------------------------------------------
+// CartesianServo — Cartesian streaming servo component
+//
+// Instrukcja użycia:
+//   Ten plik zastępuje połączenie ESPoseInt → IK połączeniem
+//   ESCartesianServo → IK.  Ładuj go w es5-hardware.ops lub osobno.
+//
+// Wymagane zmiany w es5-hardware.ops:
+//   1. Zakomentuj linię 257:
+//      //connect("ESPoseInt.CartesianPositionCommand", "IK.InputEndEffectorPose", ConnPolicy())
+//   2. Dodaj na końcu (przed EC.start()):
+//      runScript( ros.find("es_bringup") + "/cartesian-servo.ops")
+//
+// Tryb pozycyjny (CSP, mode 8) — domyślny:
+//   Pose → CartesianServo → IK → LimitDetector → ESJ2M → Motors
+//
+// Tryb momentowy (CST, mode 4) — odkomentuj sekcję TORQUE MODE poniżej:
+//   Dodatkowo: IK output → CartesianServo (dq/ddq) → ESImpedance
+//   Wymaga też aktywacji ESImpedance (patrz es5-hardware.ops linie 863-871)
+//------------------------------------------------------------------------------
+
+ros.import("cartesian_servo")
+
+loadComponent("ESCartesianServo", "CartesianServo")
+setActivity("ESCartesianServo", 0.002, 2, ORO_SCHED_RT)
+ESCartesianServo.loadService("rosparam");
+ESCartesianServo.rosparam.getAll();
+ESCartesianServo.configure()
+
+//------------------------------------------------------------------------------
+//-- Connections
+//------------------------------------------------------------------------------
+
+// Input: current end-effector pose from FK (feedback)
+connect("FK.EndEffectorOutputPose", "ESCartesianServo.CartesianPosition", ConnPolicy())
+
+// Input: current joint positions (for IK differentiation seed)
+connect("ESM2J.JointPosition", "ESCartesianServo.JointPosition", ConnPolicy())
+
+// Input: streaming Cartesian commands from ROS topic
+stream("ESCartesianServo.CartesianCommand", ros.comm.topic("/es_cartesian_servo/command"))
+
+// Input: IK failure signal
+connect("IK.ikSolutionStopRobot", "ESCartesianServo.IkFailure", ConnPolicy())
+
+// Input: emergency stop
+connect("ESStopDetector.stopRobot", "ESCartesianServo.CancelServo", ConnPolicy())
+
+// Output: smoothed Cartesian pose → IK (REPLACES ESPoseInt → IK)
+connect("ESCartesianServo.CartesianPositionCommand", "IK.InputEndEffectorPose", ConnPolicy())
+
+// Output: Cartesian velocity (monitoring)
+stream("ESCartesianServo.CartesianVelocity", ros.comm.topic("/es_cartesian_servo/velocity"))
+
+// Output: servo status (monitoring)
+stream("ESCartesianServo.ServoActive", ros.comm.topic("/es_cartesian_servo/active"))
+stream("ESCartesianServo.ServoStatus", ros.comm.topic("/es_cartesian_servo/status"))
+
+// Online parameter tuning
+stream("ESCartesianServo.new_smoothing_alpha", ros.comm.topic("/es_cartesian_servo/smoothing_alpha"))
+stream("ESCartesianServo.new_max_linear_speed", ros.comm.topic("/es_cartesian_servo/max_linear_speed"))
+stream("ESCartesianServo.new_max_angular_speed", ros.comm.topic("/es_cartesian_servo/max_angular_speed"))
+stream("ESCartesianServo.new_watchdog_timeout", ros.comm.topic("/es_cartesian_servo/watchdog_timeout"))
+stream("ESCartesianServo.new_torque_mode", ros.comm.topic("/es_cartesian_servo/torque_mode"))
+stream("ESCartesianServo.new_debug", ros.comm.topic("/es_cartesian_servo/debug"))
+
+//------------------------------------------------------------------------------
+//-- SorterScheme (dodaj ESCartesianServo przed IK)
+//------------------------------------------------------------------------------
+
+addPeer("SorterScheme", "ESCartesianServo")
+SorterScheme.addBlock("ESCartesianServo")
+
+//------------------------------------------------------------------------------
+//-- Start
+//------------------------------------------------------------------------------
+
+ESCartesianServo.start()
+
+//------------------------------------------------------------------------------
+//-- TORQUE MODE (odkomentuj gdy używasz CST z ESImpedance)
+//-- Wymaga:
+//--   1. Aktywacja ESImpedance w es5-hardware.ops (linie 863-871)
+//--   2. ModeOfOperation = 4 (CST) na wszystkich jointach
+//------------------------------------------------------------------------------
+// connect("IK.OutputJointPosition", "ESCartesianServo.IkOutputJointPosition", ConnPolicy())
+// connect("ESCartesianServo.CommandJointVelocity", "ESImpedance.CommandJointVelocity", ConnPolicy())
+// connect("ESCartesianServo.CommandJointAcceleration", "ESImpedance.CommandJointAcceleration", ConnPolicy())

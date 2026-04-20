@@ -1,0 +1,58 @@
+<launch>
+  <!-- ================================================================
+       Haptic Teleop — Phantom Omni/Touch → ES5 Robot
+
+       Uruchomienie:
+         roslaunch cartesian_servo haptic_teleop.launch
+
+       Wymaga:
+         1. Driver haptic device publikujacy PoseStamped i button Bool
+         2. System OROCOS z CartesianServo (cartesian-servo.ops)
+         3. FK publikujacy /es_arm/cartesian_pose
+       ================================================================ -->
+
+  <node name="haptic_bridge" pkg="cartesian_servo" type="haptic_bridge.py"
+        output="screen" respawn="false">
+
+    <!-- ===== Topics ===== -->
+    <!-- Dostosuj nazwy topicow do swojego drivera -->
+    <param name="haptic_pose_topic"   value="/phantom/pose"/>
+    <param name="haptic_button_topic" value="/phantom/button"/>
+    <param name="robot_pose_topic"    value="/es_arm/cartesian_pose"/>
+    <param name="servo_command_topic" value="/es_cartesian_servo/command"/>
+
+    <!-- ===== Skalowanie ===== -->
+    <!-- Phantom Omni workspace ~160mm, ES5 reach ~820mm
+         scale 3.0 = 160mm ruchu joysticka = 480mm ruchu robota
+         scale 5.0 = 160mm ruchu joysticka = 800mm ruchu robota (pelny zasieg)
+         Zacznij od 2.0-3.0 dla bezpieczenstwa -->
+    <param name="scale_position"    value="3.0"/>
+
+    <!-- Skalowanie orientacji: 1.0 = pelne, 0.5 = polowa, 0.0 = brak -->
+    <param name="scale_orientation" value="1.0"/>
+
+    <!-- ===== Wyrownanie ukladow wspolrzednych ===== -->
+    <!-- RPY [rad] rotacji z ukladu haptic do ukladu robota
+         Domyslne [0,0,0] = uklady zgodne
+
+         Phantom Omni (typowo): X-prawo, Y-gora, Z-do-uzytkownika
+         ES5 robot (typowo):    X-przod, Y-lewo, Z-gora
+
+         Przykladowe ustawienie (Phantom przed robotem, uzytkownik patrzy na robota):
+           rpy = [0, 0, -1.5708]  (obrot -90 deg wokol Z)
+
+         Dostosuj eksperymentalnie:
+           1. Engaged, rusz joystick w prawo -> robot powinien jechac w prawo
+           2. Jesli nie -> popraw katy RPY -->
+    <rosparam param="frame_rotation_rpy">[0.0, 0.0, 0.0]</rosparam>
+
+    <!-- ===== Strefa martwa ===== -->
+    <!-- W metrach w przestrzeni haptic. Phantom Omni ma ~0.5mm szum -->
+    <param name="dead_zone" value="0.002"/>
+
+    <!-- ===== Czestotliwosc ===== -->
+    <!-- Czestotliwosc publikacji do CartesianServo [Hz]
+         CartesianServo smoothing dziala najlepiej przy 50-100 Hz inputu -->
+    <param name="publish_rate" value="100.0"/>
+  </node>
+</launch>
