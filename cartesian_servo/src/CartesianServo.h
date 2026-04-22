@@ -68,7 +68,7 @@ private:
     RTT::InputPort<Eigen::VectorXd>                  port_joint_position_;
     RTT::InputPort<Eigen::VectorXd>                  port_ik_output_;
     RTT::InputPort<std_msgs::Bool>                   port_ik_failure_;
-    RTT::InputPort<std_msgs::Bool>                   port_cancel_servo_;
+    RTT::InputPort<std_msgs::Int32>                  port_cancel_servo_;
 
     // online parameter update ports
     RTT::InputPort<std_msgs::Float32MultiArray>      port_new_smoothing_alpha_;
@@ -125,6 +125,7 @@ private:
     // timing
     ros::Time last_command_time_;
     bool      first_iteration_;
+    bool      first_fk_received_;
 
     // output message buffers (pre-allocated)
     std_msgs::Float32MultiArray cart_vel_msg_;

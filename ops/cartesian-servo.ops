@@ -1,30 +1,27 @@
 //------------------------------------------------------------------------------
 // CartesianServo — Cartesian streaming servo component
 //
-// Instrukcja użycia:
-//   Ten plik zastępuje połączenie ESPoseInt → IK połączeniem
-//   ESCartesianServo → IK.  Ładuj go w es5-hardware.ops lub osobno.
+// Komponent dziala STANDALONE (wlasny watek 500 Hz, jak ESImpedance),
+// NIE w SorterScheme.
 //
 // Wymagane zmiany w es5-hardware.ops:
-//   1. Zakomentuj linię 257:
+//   1. Zakomentuj linie 257:
 //      //connect("ESPoseInt.CartesianPositionCommand", "IK.InputEndEffectorPose", ConnPolicy())
-//   2. Dodaj na końcu (przed EC.start()):
-//      runScript( ros.find("es_bringup") + "/cartesian-servo.ops")
+//   2. Dodaj PRZED "ESHandGuiding.start()" (okolo linii 952):
+//      runScript( ros.find("es5_bringup") + "/cartesian-servo.ops")
 //
-// Tryb pozycyjny (CSP, mode 8) — domyślny:
-//   Pose → CartesianServo → IK → LimitDetector → ESJ2M → Motors
+// Tryb pozycyjny (CSP, mode 8) — domyslny:
+//   Pose -> CartesianServo -> IK -> LimitDetector -> ESJ2M -> Motors
 //
-// Tryb momentowy (CST, mode 4) — odkomentuj sekcję TORQUE MODE poniżej:
-//   Dodatkowo: IK output → CartesianServo (dq/ddq) → ESImpedance
-//   Wymaga też aktywacji ESImpedance (patrz es5-hardware.ops linie 863-871)
+// Tryb momentowy (CST, mode 4) — odkomentuj sekcje TORQUE MODE ponizej
 //------------------------------------------------------------------------------
 
-ros.import("cartesian_servo")
+//------------------------------------------------------------------------------
+//-- Load component (standalone, own RT thread at 500 Hz)
+//------------------------------------------------------------------------------
 
 loadComponent("ESCartesianServo", "CartesianServo")
 setActivity("ESCartesianServo", 0.002, 2, ORO_SCHED_RT)
-ESCartesianServo.loadService("rosparam");
-ESCartesianServo.rosparam.getAll();
 ESCartesianServo.configure()
 
 //------------------------------------------------------------------------------
@@ -43,10 +40,10 @@ stream("ESCartesianServo.CartesianCommand", ros.comm.topic("/es_cartesian_servo/
 // Input: IK failure signal
 connect("IK.ikSolutionStopRobot", "ESCartesianServo.IkFailure", ConnPolicy())
 
-// Input: emergency stop
+// Input: stop from StopDetector (Int32, non-zero = stop)
 connect("ESStopDetector.stopRobot", "ESCartesianServo.CancelServo", ConnPolicy())
 
-// Output: smoothed Cartesian pose → IK (REPLACES ESPoseInt → IK)
+// Output: smoothed Cartesian pose -> IK (REPLACES ESPoseInt -> IK)
 connect("ESCartesianServo.CartesianPositionCommand", "IK.InputEndEffectorPose", ConnPolicy())
 
 // Output: Cartesian velocity (monitoring)
@@ -65,20 +62,15 @@ stream("ESCartesianServo.new_torque_mode", ros.comm.topic("/es_cartesian_servo/t
 stream("ESCartesianServo.new_debug", ros.comm.topic("/es_cartesian_servo/debug"))
 
 //------------------------------------------------------------------------------
-//-- SorterScheme (dodaj ESCartesianServo przed IK)
-//------------------------------------------------------------------------------
-
-addPeer("SorterScheme", "ESCartesianServo")
-SorterScheme.addBlock("ESCartesianServo")
-
-//------------------------------------------------------------------------------
-//-- Start
+//-- Start (standalone, NOT in SorterScheme)
+//-- startHook() toleruje brak danych z FK — zainicjalizuje sie przy pierwszym
+//-- odczycie w updateHook
 //------------------------------------------------------------------------------
 
 ESCartesianServo.start()
 
 //------------------------------------------------------------------------------
-//-- TORQUE MODE (odkomentuj gdy używasz CST z ESImpedance)
+//-- TORQUE MODE (odkomentuj gdy uzywasz CST z ESImpedance)
 //-- Wymaga:
 //--   1. Aktywacja ESImpedance w es5-hardware.ops (linie 863-871)
 //--   2. ModeOfOperation = 4 (CST) na wszystkich jointach

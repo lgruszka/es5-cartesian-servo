@@ -99,12 +99,23 @@ bool CartesianServo::configureHook() {
 // =============================================================================
 
 bool CartesianServo::startHook() {
-    // initialize from current FK pose
+    // try to initialize from current FK pose
     if (port_cartesian_position_.read(smooth_output_) == RTT::NoData) {
-        RTT::log(RTT::Error) << "[CartesianServo] No FK data at startup — "
-                             << "cannot initialize. Is FK running?"
-                             << RTT::endlog();
-        return false;
+        // FK not yet running — initialize with safe identity pose
+        // updateHook will pick up the real pose on first FK data
+        RTT::log(RTT::Warning) << "[CartesianServo] No FK data at startup — "
+                               << "will initialize from first FK reading"
+                               << RTT::endlog();
+        smooth_output_.position.x = 0.0;
+        smooth_output_.position.y = 0.0;
+        smooth_output_.position.z = 0.0;
+        smooth_output_.orientation.x = 0.0;
+        smooth_output_.orientation.y = 0.0;
+        smooth_output_.orientation.z = 0.0;
+        smooth_output_.orientation.w = 1.0;
+        first_fk_received_ = false;
+    } else {
+        first_fk_received_ = true;
     }
 
     target_pose_       = smooth_output_;
@@ -154,7 +165,22 @@ bool CartesianServo::startHook() {
 void CartesianServo::updateHook() {
     // --- 1. Always read FK feedback (keep port fresh) ---
     geometry_msgs::Pose fk_pose;
-    port_cartesian_position_.read(fk_pose);
+    if (port_cartesian_position_.read(fk_pose) == RTT::NewData && !first_fk_received_) {
+        // first FK data after startup — re-initialize to actual robot pose
+        smooth_output_ = fk_pose;
+        prev_smooth_output_ = fk_pose;
+        target_pose_ = fk_pose;
+        smooth_quat_ = Eigen::Quaterniond(
+            fk_pose.orientation.w, fk_pose.orientation.x,
+            fk_pose.orientation.y, fk_pose.orientation.z);
+        smooth_quat_.normalize();
+        prev_smooth_quat_ = smooth_quat_;
+        first_fk_received_ = true;
+        RTT::log(RTT::Info) << "[CartesianServo] FK data received, initialized at ["
+                           << fk_pose.position.x << ", "
+                           << fk_pose.position.y << ", "
+                           << fk_pose.position.z << "]" << RTT::endlog();
+    }
 
     // --- 2. Read parameter updates ---
     readParameterUpdates();
@@ -188,13 +214,14 @@ void CartesianServo::updateHook() {
         first_iteration_ = false;
     }
 
-    // --- 5. Check cancel/stop ---
-    std_msgs::Bool cancel;
-    if (RTT::NewData == port_cancel_servo_.read(cancel) && cancel.data) {
+    // --- 5. Check cancel/stop (Int32: non-zero = stop) ---
+    std_msgs::Int32 cancel;
+    if (RTT::NewData == port_cancel_servo_.read(cancel) && cancel.data != 0) {
         if (state_ == TRACKING) {
             state_ = DECELERATING;
             if (debug_) {
-                RTT::log(RTT::Info) << "[CartesianServo] Cancel -> DECELERATING"
+                RTT::log(RTT::Info) << "[CartesianServo] Cancel (code "
+                                   << cancel.data << ") -> DECELERATING"
                                    << RTT::endlog();
             }
         }
