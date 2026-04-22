@@ -69,27 +69,45 @@ CartesianServo::~CartesianServo() {}
 // =============================================================================
 
 bool CartesianServo::configureHook() {
+    RTT::log(RTT::Info) << "[CartesianServo] configureHook: start" << RTT::endlog();
+
     // pre-allocate output messages
     cart_vel_msg_.data.resize(6, 0.0);
+    RTT::log(RTT::Info) << "[CartesianServo] configureHook: cart_vel_msg allocated" << RTT::endlog();
 
     // pre-allocate Eigen vectors for torque mode
     prev_ik_output_ = Eigen::VectorXd::Zero(CS_DOF);
     prev_dq_        = Eigen::VectorXd::Zero(CS_DOF);
     dq_filtered_    = Eigen::VectorXd::Zero(CS_DOF);
     ddq_filtered_   = Eigen::VectorXd::Zero(CS_DOF);
+    RTT::log(RTT::Info) << "[CartesianServo] configureHook: Eigen vectors allocated" << RTT::endlog();
 
-    // set data samples for output ports
+    // set data samples for output ports (required for RT transport allocation)
     geometry_msgs::Pose sample_pose;
+    sample_pose.position.x = 0;
+    sample_pose.position.y = 0;
+    sample_pose.position.z = 0;
+    sample_pose.orientation.x = 0;
+    sample_pose.orientation.y = 0;
+    sample_pose.orientation.z = 0;
+    sample_pose.orientation.w = 1;
     port_cartesian_position_command_.setDataSample(sample_pose);
+    RTT::log(RTT::Info) << "[CartesianServo] configureHook: CartesianPositionCommand sample set" << RTT::endlog();
 
     port_cartesian_velocity_.setDataSample(cart_vel_msg_);
+    RTT::log(RTT::Info) << "[CartesianServo] configureHook: CartesianVelocity sample set" << RTT::endlog();
 
     Eigen::VectorXd sample_vec = Eigen::VectorXd::Zero(CS_DOF);
     port_command_joint_velocity_.setDataSample(sample_vec);
     port_command_joint_acceleration_.setDataSample(sample_vec);
+    RTT::log(RTT::Info) << "[CartesianServo] configureHook: joint vel/acc samples set" << RTT::endlog();
 
     port_servo_active_.setDataSample(servo_active_msg_);
     port_servo_status_.setDataSample(servo_status_msg_);
+
+    RTT::log(RTT::Info) << "[CartesianServo] configureHook: all data samples set — OK" << RTT::endlog();
+    RTT::log(RTT::Info) << "[CartesianServo] configureHook: ports registered: "
+                        << this->ports()->getPortNames().size() << RTT::endlog();
 
     return true;
 }

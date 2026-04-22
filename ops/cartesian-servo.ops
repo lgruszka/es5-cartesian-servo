@@ -1,79 +1,102 @@
 //------------------------------------------------------------------------------
-// CartesianServo — Cartesian streaming servo component
-//
-// Komponent dziala STANDALONE (wlasny watek 500 Hz, jak ESImpedance),
-// NIE w SorterScheme.
-//
-// Wymagane zmiany w es5-hardware.ops:
-//   1. Zakomentuj linie 257:
-//      //connect("ESPoseInt.CartesianPositionCommand", "IK.InputEndEffectorPose", ConnPolicy())
-//   2. Dodaj PRZED "ESHandGuiding.start()" (okolo linii 952):
-//      runScript( ros.find("es5_bringup") + "/cartesian-servo.ops")
-//
-// Tryb pozycyjny (CSP, mode 8) — domyslny:
-//   Pose -> CartesianServo -> IK -> LimitDetector -> ESJ2M -> Motors
-//
-// Tryb momentowy (CST, mode 4) — odkomentuj sekcje TORQUE MODE ponizej
+// CartesianServo — Cartesian streaming servo component (standalone, 500 Hz)
 //------------------------------------------------------------------------------
 
-//------------------------------------------------------------------------------
-//-- Load component (standalone, own RT thread at 500 Hz)
-//------------------------------------------------------------------------------
+print.ln("[CartesianServo OPS] === START loading cartesian-servo.ops ===")
 
+//-- Import (safe to call even if already in common-imports.ops)
+print.ln("[CartesianServo OPS] Step 1: ros.import cartesian_servo")
+ros.import("cartesian_servo")
+print.ln("[CartesianServo OPS] Step 1: OK")
+
+//-- Load component
+print.ln("[CartesianServo OPS] Step 2: loadComponent")
 loadComponent("ESCartesianServo", "CartesianServo")
+print.ln("[CartesianServo OPS] Step 2: OK")
+
+//-- Set activity (standalone RT thread, NOT in SorterScheme)
+print.ln("[CartesianServo OPS] Step 3: setActivity 0.002s prio 2 RT")
 setActivity("ESCartesianServo", 0.002, 2, ORO_SCHED_RT)
+print.ln("[CartesianServo OPS] Step 3: OK")
+
+//-- Configure
+print.ln("[CartesianServo OPS] Step 4: configure")
 ESCartesianServo.configure()
+print.ln("[CartesianServo OPS] Step 4: OK")
 
 //------------------------------------------------------------------------------
-//-- Connections
+//-- Connections (port-to-port, no transport allocation needed)
 //------------------------------------------------------------------------------
 
-// Input: current end-effector pose from FK (feedback)
+print.ln("[CartesianServo OPS] Step 5: connect ports")
+
 connect("FK.EndEffectorOutputPose", "ESCartesianServo.CartesianPosition", ConnPolicy())
+print.ln("[CartesianServo OPS]   FK -> CartesianPosition: done")
 
-// Input: current joint positions (for IK differentiation seed)
 connect("ESM2J.JointPosition", "ESCartesianServo.JointPosition", ConnPolicy())
+print.ln("[CartesianServo OPS]   ESM2J -> JointPosition: done")
 
-// Input: streaming Cartesian commands from ROS topic
-stream("ESCartesianServo.CartesianCommand", ros.comm.topic("/es_cartesian_servo/command"))
-
-// Input: IK failure signal
 connect("IK.ikSolutionStopRobot", "ESCartesianServo.IkFailure", ConnPolicy())
+print.ln("[CartesianServo OPS]   IK.ikSolutionStopRobot -> IkFailure: done")
 
-// Input: stop from StopDetector (Int32, non-zero = stop)
 connect("ESStopDetector.stopRobot", "ESCartesianServo.CancelServo", ConnPolicy())
+print.ln("[CartesianServo OPS]   ESStopDetector.stopRobot -> CancelServo: done")
 
-// Output: smoothed Cartesian pose -> IK (REPLACES ESPoseInt -> IK)
 connect("ESCartesianServo.CartesianPositionCommand", "IK.InputEndEffectorPose", ConnPolicy())
+print.ln("[CartesianServo OPS]   CartesianPositionCommand -> IK: done")
 
-// Output: Cartesian velocity (monitoring)
+print.ln("[CartesianServo OPS] Step 5: OK — all port connections done")
+
+//------------------------------------------------------------------------------
+//-- Streams (ROS topic transport — this is where shmem is allocated)
+//------------------------------------------------------------------------------
+
+print.ln("[CartesianServo OPS] Step 6: stream to ROS topics")
+
+stream("ESCartesianServo.CartesianCommand", ros.comm.topic("/es_cartesian_servo/command"))
+print.ln("[CartesianServo OPS]   CartesianCommand stream: done")
+
 stream("ESCartesianServo.CartesianVelocity", ros.comm.topic("/es_cartesian_servo/velocity"))
+print.ln("[CartesianServo OPS]   CartesianVelocity stream: done")
 
-// Output: servo status (monitoring)
 stream("ESCartesianServo.ServoActive", ros.comm.topic("/es_cartesian_servo/active"))
+print.ln("[CartesianServo OPS]   ServoActive stream: done")
+
 stream("ESCartesianServo.ServoStatus", ros.comm.topic("/es_cartesian_servo/status"))
+print.ln("[CartesianServo OPS]   ServoStatus stream: done")
 
-// Online parameter tuning
 stream("ESCartesianServo.new_smoothing_alpha", ros.comm.topic("/es_cartesian_servo/smoothing_alpha"))
+print.ln("[CartesianServo OPS]   new_smoothing_alpha stream: done")
+
 stream("ESCartesianServo.new_max_linear_speed", ros.comm.topic("/es_cartesian_servo/max_linear_speed"))
+print.ln("[CartesianServo OPS]   new_max_linear_speed stream: done")
+
 stream("ESCartesianServo.new_max_angular_speed", ros.comm.topic("/es_cartesian_servo/max_angular_speed"))
+print.ln("[CartesianServo OPS]   new_max_angular_speed stream: done")
+
 stream("ESCartesianServo.new_watchdog_timeout", ros.comm.topic("/es_cartesian_servo/watchdog_timeout"))
+print.ln("[CartesianServo OPS]   new_watchdog_timeout stream: done")
+
 stream("ESCartesianServo.new_torque_mode", ros.comm.topic("/es_cartesian_servo/torque_mode"))
+print.ln("[CartesianServo OPS]   new_torque_mode stream: done")
+
 stream("ESCartesianServo.new_debug", ros.comm.topic("/es_cartesian_servo/debug"))
+print.ln("[CartesianServo OPS]   new_debug stream: done")
+
+print.ln("[CartesianServo OPS] Step 6: OK — all streams done")
 
 //------------------------------------------------------------------------------
-//-- Start (standalone, NOT in SorterScheme)
-//-- startHook() toleruje brak danych z FK — zainicjalizuje sie przy pierwszym
-//-- odczycie w updateHook
+//-- Start
 //------------------------------------------------------------------------------
 
+print.ln("[CartesianServo OPS] Step 7: start")
 ESCartesianServo.start()
+print.ln("[CartesianServo OPS] Step 7: OK")
+
+print.ln("[CartesianServo OPS] === DONE — CartesianServo loaded and running ===")
 
 //------------------------------------------------------------------------------
 //-- TORQUE MODE (odkomentuj gdy uzywasz CST z ESImpedance)
-//-- Wymaga:
-//--   1. Aktywacja ESImpedance w es5-hardware.ops (linie 863-871)
-//--   2. ModeOfOperation = 4 (CST) na wszystkich jointach
 //------------------------------------------------------------------------------
 // connect("IK.OutputJointPosition", "ESCartesianServo.IkOutputJointPosition", ConnPolicy())
 // connect("ESCartesianServo.CommandJointVelocity", "ESImpedance.CommandJointVelocity", ConnPolicy())
