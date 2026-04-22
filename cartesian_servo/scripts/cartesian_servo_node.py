@@ -25,15 +25,79 @@ Architecture:
 import rospy
 import numpy as np
 import threading
+import math
 from geometry_msgs.msg import Pose, PoseStamped
 from std_msgs.msg import Bool, Float32MultiArray, Int32
-from tf.transformations import (
-    quaternion_matrix,
-    quaternion_from_matrix,
-    quaternion_multiply,
-    quaternion_inverse,
-    euler_matrix,
-)
+
+
+# ============================================================================
+# Quaternion math (pure numpy, no tf dependency)
+# Quaternion format: [x, y, z, w]
+# ============================================================================
+
+def quat_multiply(q1, q2):
+    """Hamilton product, format [x,y,z,w]."""
+    x1, y1, z1, w1 = q1
+    x2, y2, z2, w2 = q2
+    return np.array([
+        w1*x2 + x1*w2 + y1*z2 - z1*y2,
+        w1*y2 - x1*z2 + y1*w2 + z1*x2,
+        w1*z2 + x1*y2 - y1*x2 + z1*w2,
+        w1*w2 - x1*x2 - y1*y2 - z1*z2,
+    ])
+
+def quat_inverse(q):
+    """Inverse (conjugate for unit quaternion), format [x,y,z,w]."""
+    return np.array([-q[0], -q[1], -q[2], q[3]])
+
+def quat_to_matrix(q):
+    """Quaternion [x,y,z,w] -> 3x3 rotation matrix."""
+    x, y, z, w = q
+    return np.array([
+        [1 - 2*(y*y + z*z),     2*(x*y - z*w),     2*(x*z + y*w)],
+        [    2*(x*y + z*w), 1 - 2*(x*x + z*z),     2*(y*z - x*w)],
+        [    2*(x*z - y*w),     2*(y*z + x*w), 1 - 2*(x*x + y*y)],
+    ])
+
+def matrix_to_quat(R):
+    """3x3 rotation matrix -> quaternion [x,y,z,w]."""
+    tr = R[0,0] + R[1,1] + R[2,2]
+    if tr > 0:
+        s = 0.5 / math.sqrt(tr + 1.0)
+        w = 0.25 / s
+        x = (R[2,1] - R[1,2]) * s
+        y = (R[0,2] - R[2,0]) * s
+        z = (R[1,0] - R[0,1]) * s
+    elif R[0,0] > R[1,1] and R[0,0] > R[2,2]:
+        s = 2.0 * math.sqrt(1.0 + R[0,0] - R[1,1] - R[2,2])
+        w = (R[2,1] - R[1,2]) / s
+        x = 0.25 * s
+        y = (R[0,1] + R[1,0]) / s
+        z = (R[0,2] + R[2,0]) / s
+    elif R[1,1] > R[2,2]:
+        s = 2.0 * math.sqrt(1.0 + R[1,1] - R[0,0] - R[2,2])
+        w = (R[0,2] - R[2,0]) / s
+        x = (R[0,1] + R[1,0]) / s
+        y = 0.25 * s
+        z = (R[1,2] + R[2,1]) / s
+    else:
+        s = 2.0 * math.sqrt(1.0 + R[2,2] - R[0,0] - R[1,1])
+        w = (R[1,0] - R[0,1]) / s
+        x = (R[0,2] + R[2,0]) / s
+        y = (R[1,2] + R[2,1]) / s
+        z = 0.25 * s
+    return np.array([x, y, z, w])
+
+def euler_to_matrix(roll, pitch, yaw):
+    """RPY -> 3x3 rotation matrix."""
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    return np.array([
+        [cy*cp,  cy*sp*sr - sy*cr,  cy*sp*cr + sy*sr],
+        [sy*cp,  sy*sp*sr + cy*cr,  sy*sp*cr - cy*sr],
+        [  -sp,           cp*sr,           cp*cr],
+    ])
 
 
 class CartesianServoNode(object):
@@ -59,7 +123,7 @@ class CartesianServoNode(object):
         self.idle_vel_threshold = rospy.get_param("~idle_velocity_threshold", 0.001)
 
         rpy = rospy.get_param("~frame_rotation_rpy", [0.0, 0.0, 0.0])
-        self.R_align = euler_matrix(rpy[0], rpy[1], rpy[2])[:3, :3]
+        self.R_align = euler_to_matrix(rpy[0], rpy[1], rpy[2])
 
         # --- topics ---
         haptic_pose_topic = rospy.get_param("~haptic_pose_topic", "/phantom/pose")
@@ -219,15 +283,13 @@ class CartesianServoNode(object):
 
         # orientation delta
         if self.scale_ori > 0.01:
-            q_anchor_inv = quaternion_inverse(self.anchor_haptic_quat)
-            delta_q = quaternion_multiply(self.haptic_quat, q_anchor_inv)
-            R_delta = quaternion_matrix(delta_q)[:3, :3]
+            q_anchor_inv = quat_inverse(self.anchor_haptic_quat)
+            delta_q = quat_multiply(self.haptic_quat, q_anchor_inv)
+            R_delta = quat_to_matrix(delta_q)
             R_aligned = self.R_align.dot(R_delta).dot(self.R_align.T)
-            M = np.eye(4)
-            M[:3, :3] = R_aligned
-            delta_q_aligned = quaternion_from_matrix(M)
-            self.target_quat = quaternion_multiply(delta_q_aligned,
-                                                   self.anchor_robot_quat)
+            delta_q_aligned = matrix_to_quat(R_aligned)
+            self.target_quat = quat_multiply(delta_q_aligned,
+                                             self.anchor_robot_quat)
             norm = np.linalg.norm(self.target_quat)
             if norm > 1e-10:
                 self.target_quat /= norm
