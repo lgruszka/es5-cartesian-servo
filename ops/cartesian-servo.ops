@@ -14,13 +14,10 @@ print.ln("[CartesianServo OPS] Step 2: loadComponent")
 loadComponent("ESCartesianServo", "CartesianServo")
 print.ln("[CartesianServo OPS] Step 2: OK")
 
-//-- Set activity (standalone thread, NOT in SorterScheme)
-//-- ORO_SCHED_OTHER zamiast ORO_SCHED_RT — system ma tylko 512KB locked memory
-//-- i dodatkowy watek RT przekracza limit (CRITICAL: sem bad_alloc).
-//-- Dla teleoperacji non-RT jest wystarczajace — downstream (IK, EC) maja RT.
-print.ln("[CartesianServo OPS] Step 3: setActivity 0.002s prio 0 non-RT")
-setActivity("ESCartesianServo", 0.002, 0, ORO_SCHED_OTHER)
-print.ln("[CartesianServo OPS] Step 3: OK")
+//-- NO setActivity — CartesianPosition is EventPort triggered by FK at 500Hz.
+//-- This avoids POSIX semaphore allocation (system limit 512KB locked memory).
+//-- Component runs in FK's execution context when FK writes EndEffectorOutputPose.
+print.ln("[CartesianServo OPS] Step 3: SKIP setActivity (using EventPort from FK)")
 
 //-- Configure
 print.ln("[CartesianServo OPS] Step 4: configure")
