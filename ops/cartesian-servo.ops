@@ -1,103 +1,17 @@
 //------------------------------------------------------------------------------
-// CartesianServo — Cartesian streaming servo component (standalone, 500 Hz)
+// CartesianServo — Python node version (zero OROCOS components)
+//
+// Nie tworzy zadnego nowego komponentu OROCOS = zero semaforow = zero
+// problemow z pamiecia. Smoothing dziala w Python node (250 Hz).
+// Pozy sa streamowane bezposrednio do IK przez ROS topic.
+//
+// Wymagane zmiany w es5-hardware.ops:
+//   1. Zakomentuj linie 257:
+//      //connect("ESPoseInt.CartesianPositionCommand", "IK.InputEndEffectorPose", ConnPolicy())
+//   2. Dodaj PRZED "ESHandGuiding.start()":
+//      runScript( ros.find("es5_bringup") + "/cartesian-servo.ops")
 //------------------------------------------------------------------------------
 
-print.ln("[CartesianServo OPS] === START loading cartesian-servo.ops ===")
-
-//-- Import (safe to call even if already in common-imports.ops)
-print.ln("[CartesianServo OPS] Step 1: ros.import cartesian_servo")
-ros.import("cartesian_servo")
-print.ln("[CartesianServo OPS] Step 1: OK")
-
-//-- Load component
-print.ln("[CartesianServo OPS] Step 2: loadComponent")
-loadComponent("ESCartesianServo", "CartesianServo")
-print.ln("[CartesianServo OPS] Step 2: OK")
-
-//-- NO setActivity — CartesianPosition is EventPort triggered by FK at 500Hz.
-//-- This avoids POSIX semaphore allocation (system limit 512KB locked memory).
-//-- Component runs in FK's execution context when FK writes EndEffectorOutputPose.
-print.ln("[CartesianServo OPS] Step 3: SKIP setActivity (using EventPort from FK)")
-
-//-- Configure
-print.ln("[CartesianServo OPS] Step 4: configure")
-ESCartesianServo.configure()
-print.ln("[CartesianServo OPS] Step 4: OK")
-
-//------------------------------------------------------------------------------
-//-- Connections (port-to-port, no transport allocation needed)
-//------------------------------------------------------------------------------
-
-print.ln("[CartesianServo OPS] Step 5: connect ports")
-
-connect("FK.EndEffectorOutputPose", "ESCartesianServo.CartesianPosition", ConnPolicy())
-print.ln("[CartesianServo OPS]   FK -> CartesianPosition: done")
-
-connect("ESM2J.JointPosition", "ESCartesianServo.JointPosition", ConnPolicy())
-print.ln("[CartesianServo OPS]   ESM2J -> JointPosition: done")
-
-connect("IK.ikSolutionStopRobot", "ESCartesianServo.IkFailure", ConnPolicy())
-print.ln("[CartesianServo OPS]   IK.ikSolutionStopRobot -> IkFailure: done")
-
-connect("ESStopDetector.stopRobot", "ESCartesianServo.CancelServo", ConnPolicy())
-print.ln("[CartesianServo OPS]   ESStopDetector.stopRobot -> CancelServo: done")
-
-connect("ESCartesianServo.CartesianPositionCommand", "IK.InputEndEffectorPose", ConnPolicy())
-print.ln("[CartesianServo OPS]   CartesianPositionCommand -> IK: done")
-
-print.ln("[CartesianServo OPS] Step 5: OK — all port connections done")
-
-//------------------------------------------------------------------------------
-//-- Streams (ROS topic transport — this is where shmem is allocated)
-//------------------------------------------------------------------------------
-
-print.ln("[CartesianServo OPS] Step 6: stream to ROS topics")
-
-stream("ESCartesianServo.CartesianCommand", ros.comm.topic("/es_cartesian_servo/command"))
-print.ln("[CartesianServo OPS]   CartesianCommand stream: done")
-
-stream("ESCartesianServo.CartesianVelocity", ros.comm.topic("/es_cartesian_servo/velocity"))
-print.ln("[CartesianServo OPS]   CartesianVelocity stream: done")
-
-stream("ESCartesianServo.ServoActive", ros.comm.topic("/es_cartesian_servo/active"))
-print.ln("[CartesianServo OPS]   ServoActive stream: done")
-
-stream("ESCartesianServo.ServoStatus", ros.comm.topic("/es_cartesian_servo/status"))
-print.ln("[CartesianServo OPS]   ServoStatus stream: done")
-
-stream("ESCartesianServo.new_smoothing_alpha", ros.comm.topic("/es_cartesian_servo/smoothing_alpha"))
-print.ln("[CartesianServo OPS]   new_smoothing_alpha stream: done")
-
-stream("ESCartesianServo.new_max_linear_speed", ros.comm.topic("/es_cartesian_servo/max_linear_speed"))
-print.ln("[CartesianServo OPS]   new_max_linear_speed stream: done")
-
-stream("ESCartesianServo.new_max_angular_speed", ros.comm.topic("/es_cartesian_servo/max_angular_speed"))
-print.ln("[CartesianServo OPS]   new_max_angular_speed stream: done")
-
-stream("ESCartesianServo.new_watchdog_timeout", ros.comm.topic("/es_cartesian_servo/watchdog_timeout"))
-print.ln("[CartesianServo OPS]   new_watchdog_timeout stream: done")
-
-stream("ESCartesianServo.new_torque_mode", ros.comm.topic("/es_cartesian_servo/torque_mode"))
-print.ln("[CartesianServo OPS]   new_torque_mode stream: done")
-
-stream("ESCartesianServo.new_debug", ros.comm.topic("/es_cartesian_servo/debug"))
-print.ln("[CartesianServo OPS]   new_debug stream: done")
-
-print.ln("[CartesianServo OPS] Step 6: OK — all streams done")
-
-//------------------------------------------------------------------------------
-//-- Start
-//------------------------------------------------------------------------------
-
-print.ln("[CartesianServo OPS] Step 7: start")
-ESCartesianServo.start()
-print.ln("[CartesianServo OPS] Step 7: OK")
-
-print.ln("[CartesianServo OPS] === DONE — CartesianServo loaded and running ===")
-
-//------------------------------------------------------------------------------
-//-- TORQUE MODE (odkomentuj gdy uzywasz CST z ESImpedance)
-//------------------------------------------------------------------------------
-// connect("IK.OutputJointPosition", "ESCartesianServo.IkOutputJointPosition", ConnPolicy())
-// connect("ESCartesianServo.CommandJointVelocity", "ESImpedance.CommandJointVelocity", ConnPolicy())
-// connect("ESCartesianServo.CommandJointAcceleration", "ESImpedance.CommandJointAcceleration", ConnPolicy())
+print.ln("[CartesianServo OPS] Streaming /es_cartesian_servo/command -> IK.InputEndEffectorPose")
+stream("IK.InputEndEffectorPose", ros.comm.topic("/es_cartesian_servo/command"))
+print.ln("[CartesianServo OPS] DONE — IK will receive poses from Python node")
