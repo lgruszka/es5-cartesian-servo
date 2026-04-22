@@ -343,6 +343,10 @@ void CartesianServo::updateHook() {
     }
 
     // --- 12. Write Cartesian pose output to IK ---
+    // Don't write until we have valid FK data (avoid sending zero pose to IK)
+    if (!first_fk_received_) {
+        return;
+    }
     port_cartesian_position_command_.write(smooth_output_);
 
     // --- 13. Write Cartesian velocity (monitoring) ---

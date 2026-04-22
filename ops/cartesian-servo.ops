@@ -14,9 +14,12 @@ print.ln("[CartesianServo OPS] Step 2: loadComponent")
 loadComponent("ESCartesianServo", "CartesianServo")
 print.ln("[CartesianServo OPS] Step 2: OK")
 
-//-- Set activity (standalone RT thread, NOT in SorterScheme)
-print.ln("[CartesianServo OPS] Step 3: setActivity 0.002s prio 2 RT")
-setActivity("ESCartesianServo", 0.002, 2, ORO_SCHED_RT)
+//-- Set activity (standalone thread, NOT in SorterScheme)
+//-- ORO_SCHED_OTHER zamiast ORO_SCHED_RT — system ma tylko 512KB locked memory
+//-- i dodatkowy watek RT przekracza limit (CRITICAL: sem bad_alloc).
+//-- Dla teleoperacji non-RT jest wystarczajace — downstream (IK, EC) maja RT.
+print.ln("[CartesianServo OPS] Step 3: setActivity 0.002s prio 0 non-RT")
+setActivity("ESCartesianServo", 0.002, 0, ORO_SCHED_OTHER)
 print.ln("[CartesianServo OPS] Step 3: OK")
 
 //-- Configure
